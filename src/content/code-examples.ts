@@ -90,6 +90,114 @@ class Cart {
   total() { return this.#items.map(i => i.subtotal()).reduce((sum, next) => sum.plus(next), Money.of(0)); }
 }`};
 
+export const ocpExamples:Examples={
+cpp:`class DiscountPolicy {
+public:
+  virtual ~DiscountPolicy() = default;
+  virtual Money apply(Money total) const = 0;
+};
+class FestivalDiscount final : public DiscountPolicy {
+public:
+  Money apply(Money total) const override { return total.percentOff(15); }
+};
+class PricingService {
+public:
+  Money price(Money total, const DiscountPolicy& policy) const {
+    return policy.apply(total);
+  }
+};
+// Templates, function objects, variant, or std::function can also extend behavior.`,
+go:`type DiscountPolicy interface { Apply(Money) Money }
+type FestivalDiscount struct{}
+func (FestivalDiscount) Apply(total Money) Money { return total.PercentOff(15) }
+
+type PricingService struct{}
+func (PricingService) Price(total Money, policy DiscountPolicy) Money {
+  return policy.Apply(total)
+}
+
+// A function is also an honest extension point.
+type DiscountFunc func(Money) Money
+func (f DiscountFunc) Apply(total Money) Money { return f(total) }`,
+java:`public interface DiscountPolicy {
+  Money apply(Money total);
+}
+public final class FestivalDiscount implements DiscountPolicy {
+  @Override public Money apply(Money total) {
+    return total.percentOff(15);
+  }
+}
+public final class PricingService {
+  public Money price(Money total, DiscountPolicy policy) {
+    return policy.apply(total);
+  }
+}
+// PartnerDiscount adds an implementation; PricingService stays stable.`,
+typescript:`interface DiscountPolicy {
+  apply(total: Money): Money;
+}
+const festivalDiscount: DiscountPolicy = {
+  apply: total => total.percentOff(15),
+};
+type DiscountFn = (total: Money) => Money;
+
+class PricingService {
+  price(total: Money, policy: DiscountPolicy) {
+    return policy.apply(total);
+  }
+}
+// Structural typing keeps the extension contract lightweight.`};
+
+export const lspExamples:Examples={
+cpp:`class ReadableStorage {
+public:
+  virtual ~ReadableStorage() = default;
+  virtual Result<Data> load(const Key&) const = 0;
+};
+class WritableStorage {
+public:
+  virtual ~WritableStorage() = default;
+  virtual Result<void> save(const Key&, const Data&) = 0;
+};
+class S3Storage final : public ReadableStorage, public WritableStorage {
+  Result<Data> load(const Key& key) const override;
+  Result<void> save(const Key& key, const Data& data) override;
+};
+// override and const verify shape; contract tests verify behavior and errors.`,
+go:`type ReadableStorage interface {
+  Load(context.Context, string) ([]byte, error)
+}
+type WritableStorage interface {
+  Save(context.Context, string, []byte) error
+}
+type ReadOnlyArchive struct{ /* ... */ }
+func (a *ReadOnlyArchive) Load(ctx context.Context, key string) ([]byte, error) {
+  return a.read(ctx, key)
+}
+// Go has no class inheritance; implicit satisfaction cannot prove behavior.`,
+java:`public interface ReadableStorage {
+  byte[] load(String key) throws StorageException;
+}
+public interface WritableStorage {
+  void save(String key, byte[] data) throws StorageException;
+}
+public final class ReadOnlyArchive implements ReadableStorage {
+  @Override public byte[] load(String key) { return archive.read(key); }
+}
+// Avoid implementing save() only to throw UnsupportedOperationException.
+// Every writable implementation runs the same behavioral contract suite.`,
+typescript:`interface ReadableStorage {
+  load(key: string): Promise<Uint8Array | undefined>;
+}
+interface WritableStorage {
+  save(key: string, data: Uint8Array): Promise<void>;
+}
+const archive: ReadableStorage = {
+  load: key => readArchive(key),
+};
+// Structural typing checks shape, not whether load lies, mutates unrelated
+// state, or follows the promised failure semantics.`};
+
 export const encapsulationExamples:Examples={
 cpp:`class Order {
   OrderStatus status_{OrderStatus::Draft};
