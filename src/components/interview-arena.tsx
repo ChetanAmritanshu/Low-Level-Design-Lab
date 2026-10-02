@@ -1,0 +1,2 @@
+import { interviewSystems } from "@/data/topics";
+export function InterviewArena(){return <div className="arena-grid">{interviewSystems.map(([title,difficulty,concepts,duration],index)=><article className="arena-card" key={title}><div><span>CASE {String(index+1).padStart(2,"0")}</span><small>PREVIEW</small></div><h3>{title}</h3><p>{concepts}</p><dl><div><dt>LEVEL</dt><dd>{difficulty}</dd></div><div><dt>INTERVIEW</dt><dd>{duration}</dd></div></dl></article>)}</div>}
