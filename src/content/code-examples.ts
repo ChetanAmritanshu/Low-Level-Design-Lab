@@ -195,3 +195,191 @@ class CheckoutService {
   checkout(order: Order, method: PaymentMethod) { return method.pay(order); }
 }
 // Any value with a compatible pay method satisfies this structural contract.`};
+
+export const lifecycleExamples:Examples={
+cpp:`class PaymentSession {
+  enum class State { Ready, Processing, Succeeded, Failed, Closed };
+  State state_{State::Ready};
+  PaymentGateway& gateway_; // borrowed; gateway outlives this operation
+public:
+  explicit PaymentSession(PaymentGateway& gateway) : gateway_(gateway) {}
+  PaymentResult process(const Order& order) {
+    if (state_ != State::Ready) throw DomainError("session is not ready");
+    state_ = State::Processing;
+    auto result = gateway_.charge(order.total());
+    state_ = result.ok() ? State::Succeeded : State::Failed;
+    return result;
+  }
+  void close() noexcept { state_ = State::Closed; }
+};
+
+void checkout(PaymentGateway& gateway, const Order& order) {
+  PaymentSession session(gateway); // stack lifetime; single scope owns it
+  session.process(order);
+  session.close();
+} // destructor runs here; RAII resources owned by session are released`,
+go:`type PaymentSession struct {
+  state State
+  client PaymentClient // referenced dependency
+  cancel context.CancelFunc
+}
+
+func NewPaymentSession(parent context.Context, client PaymentClient) *PaymentSession {
+  _, cancel := context.WithCancel(parent)
+  return &PaymentSession{state: Ready, client: client, cancel: cancel}
+}
+func (s *PaymentSession) Process(ctx context.Context, order Order) (PaymentResult, error) {
+  if s.state != Ready { return PaymentResult{}, errors.New("session is not ready") }
+  s.state = Processing
+  result, err := s.client.Charge(ctx, order.Total())
+  if err != nil { s.state = Failed; return PaymentResult{}, err }
+  s.state = Succeeded; return result, nil
+}
+func (s *PaymentSession) Close() { s.cancel(); s.state = Closed }
+
+session := NewPaymentSession(ctx, client)
+defer session.Close() // operation owns cancellation and cleanup`,
+java:`public final class PaymentSession implements AutoCloseable {
+  private State state = State.READY;
+  private final PaymentClient client; // referenced, not created here
+
+  public PaymentSession(PaymentClient client) { this.client = client; }
+  public PaymentResult process(Order order) {
+    if (state != State.READY) throw new IllegalStateException("session is not ready");
+    state = State.PROCESSING;
+    try {
+      var result = client.charge(order.total());
+      state = State.SUCCEEDED; return result;
+    } catch (RuntimeException failure) {
+      state = State.FAILED; throw failure;
+    }
+  }
+  @Override public void close() { state = State.CLOSED; }
+}
+
+try (var session = new PaymentSession(paymentClient)) {
+  return session.process(order);
+} // deterministic cleanup; garbage collection is not the resource policy`,
+typescript:`class PaymentSession {
+  #state: State = "READY";
+  #abort = new AbortController();
+  constructor(private readonly client: PaymentClient) {}
+
+  async process(order: Order): Promise<PaymentResult> {
+    if (this.#state !== "READY") throw new Error("session is not ready");
+    this.#state = "PROCESSING";
+    try {
+      const result = await this.client.charge(order.total, this.#abort.signal);
+      this.#state = "SUCCEEDED"; return result;
+    } catch (failure) {
+      this.#state = "FAILED"; throw failure;
+    }
+  }
+  close() { this.#abort.abort(); this.#state = "CLOSED"; }
+}
+
+const session = new PaymentSession(paymentClient);
+try { await session.process(order); }
+finally { session.close(); } // stop work and detach logical resources`};
+
+export const srpExamples:Examples={
+cpp:`// BEFORE: policy, I/O, and orchestration change together.
+class OrderService {
+public:
+  Receipt place(const Draft& draft) {
+    validate(draft); auto total = calculateTaxAndDiscount(draft);
+    inventory_.reserve(draft.items()); gateway_.charge(total);
+    repository_.save(draft, total); email_.send(draft.customer());
+    analytics_.track("order_placed"); return invoice_.generate(draft, total);
+  }
+};
+
+// AFTER: Checkout owns the workflow; collaborators own volatile policies.
+class CheckoutService {
+  OrderValidator& validator_; PricingPolicy& pricing_;
+  InventoryService& inventory_; PaymentProcessor& payments_;
+  OrderRepository& orders_; NotificationService& notifications_;
+public:
+  Receipt place(const Draft& draft) {
+    validator_.validate(draft);
+    auto priced = pricing_.price(draft);
+    auto reservation = inventory_.reserve(priced.items());
+    auto payment = payments_.charge(priced.total());
+    auto order = orders_.save(Order::confirmed(priced, reservation, payment));
+    notifications_.orderConfirmed(order);
+    return Receipt::from(order);
+  }
+}; // runtime interfaces are useful at genuine boundaries; value policies can be static`,
+go:`// BEFORE: one type imports every reason to change.
+type OrderService struct { db *sql.DB; payments *Stripe; mail *SMTP; stock *Warehouse }
+func (s *OrderService) Place(ctx context.Context, draft Draft) (Receipt, error) {
+  // validate, calculate tax, reserve, charge, save, email, analytics, invoice...
+}
+
+// AFTER: small interfaces are defined where Checkout consumes them.
+type PaymentProcessor interface { Charge(context.Context, Money) (Payment, error) }
+type OrderStore interface { Save(context.Context, Order) error }
+type Checkout struct { price PricingPolicy; pay PaymentProcessor; store OrderStore; stock Inventory }
+func (c Checkout) Place(ctx context.Context, draft Draft) (Receipt, error) {
+  if err := ValidateDraft(draft); err != nil { return Receipt{}, err }
+  priced := c.price.Price(draft)
+  reservation, err := c.stock.Reserve(ctx, priced.Items); if err != nil { return Receipt{}, err }
+  payment, err := c.pay.Charge(ctx, priced.Total); if err != nil { return Receipt{}, err }
+  order := ConfirmOrder(priced, reservation, payment)
+  if err := c.store.Save(ctx, order); err != nil { return Receipt{}, err }
+  return NewReceipt(order), nil
+}`,
+java:`// BEFORE: six teams edit this class.
+final class OrderService {
+  Receipt place(Draft draft) {
+    validate(draft); var priced = calculateTaxAndDiscount(draft);
+    inventory.reserve(priced.items()); stripe.charge(priced.total());
+    database.save(priced); smtp.sendConfirmation(priced);
+    analytics.track(priced); return pdfInvoice.generate(priced);
+  }
+}
+
+// AFTER: interfaces mark boundaries with real substitution value.
+final class CheckoutService {
+  private final OrderValidator validator;
+  private final PricingPolicy pricing;
+  private final InventoryService inventory;
+  private final PaymentProcessor payments;
+  private final OrderRepository orders;
+  CheckoutService(OrderValidator v, PricingPolicy p, InventoryService i,
+                  PaymentProcessor pay, OrderRepository orders) {
+    this.validator=v; this.pricing=p; this.inventory=i; this.payments=pay; this.orders=orders;
+  }
+  Receipt place(Draft draft) {
+    validator.validate(draft); var priced=pricing.price(draft);
+    var reservation=inventory.reserve(priced.items());
+    var payment=payments.charge(priced.total());
+    var order=orders.save(Order.confirmed(priced,reservation,payment));
+    return Receipt.from(order);
+  }
+}`,
+typescript:`// BEFORE: unrelated provider and policy changes collide here.
+class OrderService {
+  async place(draft: Draft) {
+    validate(draft); const total = calculateTaxAndDiscount(draft);
+    await inventory.reserve(draft.items); await stripe.charge(total);
+    await database.save(draft, total); await email.send(draft.customerId);
+    analytics.track("order_placed"); return pdfInvoice.generate(draft, total);
+  }
+}
+
+// AFTER: structural contracts keep the orchestration boundary lightweight.
+interface PaymentProcessor { charge(total: Money): Promise<Payment>; }
+interface OrderRepository { save(order: Order): Promise<Order>; }
+class CheckoutService {
+  constructor(private validator: OrderValidator, private pricing: PricingPolicy,
+    private inventory: InventoryService, private payments: PaymentProcessor,
+    private orders: OrderRepository) {}
+  async place(draft: Draft) {
+    this.validator.validate(draft); const priced=this.pricing.price(draft);
+    const reservation=await this.inventory.reserve(priced.items);
+    const payment=await this.payments.charge(priced.total);
+    const order=Order.confirmed(priced,reservation,payment);
+    return Receipt.from(await this.orders.save(order));
+  }
+}`};

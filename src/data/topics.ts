@@ -10,9 +10,9 @@ const titles = [
   "Machine Coding Strategy", "Parking Lot", "Splitwise", "BookMyShow", "Elevator System", "Notification System", "Cab Booking System", "Food Delivery System", "Kafka-lite Queue", "Distributed Cache", "Trading Exchange", "Refactoring & Code Smells", "End-to-End Mock LLD Interview",
 ] as const;
 
-const slugs = ["oop-fundamentals", "encapsulation-abstraction", "inheritance-polymorphism"];
+const slugs = ["oop-fundamentals", "encapsulation-abstraction", "inheritance-polymorphism", "object-lifecycle-ownership", "single-responsibility-principle"];
 const short: Record<number, string> = { 1:"Objects & Behavior", 2:"Boundaries", 3:"Polymorphism", 8:"ISP + DIP", 26:"Template + Chain", 29:"UML", 31:"Mutexes", 32:"Deadlocks", 34:"RAII", 35:"Move Semantics", 36:"Virtual Dispatch", 37:"C++ Thread Safety", 38:"Machine Coding", 46:"Kafka-lite", 50:"Mock Interview" };
-const topic = (n: number): Topic => ({ number:String(n).padStart(2,"0"), title:titles[n-1], shortTitle:short[n] ?? titles[n-1], slug:n <= 3 ? `/learn/${slugs[n-1]}` : "", available:n <= 3 });
+const topic = (n: number): Topic => ({ number:String(n).padStart(2,"0"), title:titles[n-1], shortTitle:short[n] ?? titles[n-1], slug:n <= 5 ? `/learn/${slugs[n-1]}` : "", available:n <= 5 });
 
 export const topicGroups: TopicGroup[] = [
   { id:"objects", label:"Object Thinking & OOP", eyebrow:"Model responsibilities", tone:"cyan", topics:[1,2,3,4].map(topic) },
