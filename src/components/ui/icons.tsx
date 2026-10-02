@@ -1,0 +1,11 @@
+type IconProps = { className?: string };
+const icon = (children: React.ReactNode, props: IconProps) => <svg className={props.className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
+export const ArrowRight = (p:IconProps) => icon(<><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,p);
+export const ArrowDown = (p:IconProps) => icon(<><path d="M12 4v16"/><path d="m6 14 6 6 6-6"/></>,p);
+export const Menu = (p:IconProps) => icon(<><path d="M4 7h16M4 12h16M4 17h16"/></>,p);
+export const Close = (p:IconProps) => icon(<><path d="m6 6 12 12M18 6 6 18"/></>,p);
+export const Github = (p:IconProps) => icon(<><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7.4A5.8 5.8 0 0 0 19.3 3 5.4 5.4 0 0 0 19.2 0S18 0 15 1.5a13.4 13.4 0 0 0-7 0C5 0 3.8 0 3.8 0a5.4 5.4 0 0 0-.1 3A5.8 5.8 0 0 0 2.2 7.1c0 5.8 3.5 7 6.8 7.4A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/></>,p);
+export const Rotate = (p:IconProps) => icon(<><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></>,p);
+export const Check = (p:IconProps) => icon(<path d="m5 12 4 4L19 6"/>,p);
+export const CodeIcon = (p:IconProps) => icon(<><path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/></>,p);
+export const BoxIcon = (p:IconProps) => icon(<><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></>,p);

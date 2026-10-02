@@ -1,0 +1,6 @@
+"use client";
+import Link from "next/link";
+import { useState } from "react";
+import { Close, Github, Menu } from "@/components/ui/icons";
+const nav=[["Learn","/learn/oop-fundamentals"],["Map","/#learning-map"],["Interview Arena","/#arena"]] as const;
+export function SiteHeader(){const[open,setOpen]=useState(false);return <header className="site-header"><div className="nav-shell"><Link href="/" className="brand" aria-label="Low-Level Design Lab home"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><span>LLD <b>LAB</b></span></Link><nav className="desktop-nav" aria-label="Primary navigation">{nav.map(([l,h])=><Link href={h} key={l}>{l}</Link>)}</nav><div className="nav-actions"><a className="github-link" href="https://github.com/ChetanAmritanshu/Low-Level-Design-Lab" target="_blank" rel="noreferrer"><Github/>GitHub</a><button className="menu-button" type="button" aria-label={open?"Close navigation":"Open navigation"} aria-expanded={open} onClick={()=>setOpen(!open)}>{open?<Close/>:<Menu/>}</button></div></div>{open?<nav className="mobile-nav" aria-label="Mobile navigation">{nav.map(([l,h])=><Link href={h} key={l} onClick={()=>setOpen(false)}>{l}<span>↗</span></Link>)}</nav>:null}</header>}
