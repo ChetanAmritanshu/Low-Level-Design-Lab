@@ -738,3 +738,102 @@ async function checkout(request:Request):Promise<CheckoutResult>{
  try { return {ok:true,receipt:await complete(request)}; }
  catch(error){ if(error instanceof PaymentDeclined)return {ok:false,error:"DECLINED"}; throw new CheckoutUnavailable("checkout failed",{cause:error}); }
 }`};
+
+export const observabilityExamples:Examples={
+cpp:`struct ScopeTimer { Logger& log; std::string span; TimePoint start{now()};
+  ~ScopeTimer(){ log.info("span.completed", {{"span",span},{"duration_ms",elapsed(start)}}); }
+};
+Receipt checkout(const Request& r, const TraceContext& trace) {
+  ScopeTimer timer{log_, "checkout"};
+  log_.info("checkout.started", {{"order_id",r.order_id},{"trace_id",trace.id}});
+  return payments_.capture(r); // never log card data or access tokens
+}`,
+go:`func (s Service) Checkout(ctx context.Context, r Request) (Receipt, error) {
+ traceID := TraceIDFrom(ctx); started := time.Now()
+ s.log.InfoContext(ctx, "checkout.started", "order_id", r.OrderID, "trace_id", traceID)
+ receipt, err := s.payments.Capture(ctx, r.Payment)
+ if err != nil { s.log.ErrorContext(ctx, "payment.capture.failed", "order_id",r.OrderID,"duration_ms",time.Since(started).Milliseconds(),"err",err); return Receipt{},err }
+ return receipt,nil
+}`,
+java:`Receipt checkout(Request request) {
+  try (var ignored = MDC.putCloseable("trace_id", request.traceId())) {
+    log.info("checkout.started order_id={}", request.orderId());
+    var started = clock.instant();
+    try { return payments.capture(request.payment()); }
+    catch (ProviderTimeout cause) {
+      log.error("payment.capture.failed order_id={} duration_ms={}", request.orderId(), elapsed(started), cause); throw cause;
+    }
+  }
+}`,
+typescript:`const requestContext = new AsyncLocalStorage<{traceId:string}>();
+async function checkout(request: Request): Promise<Receipt> {
+  const started = performance.now();
+  logger.info({event:"checkout.started", orderId:request.orderId, traceId:requestContext.getStore()?.traceId});
+  try { return await payments.capture(request.payment); }
+  catch (error) { logger.error({event:"payment.capture.failed", orderId:request.orderId, durationMs:performance.now()-started, errorCode:classify(error)}); throw error; }
+}`};
+
+export const testingExamples:Examples={
+cpp:`TEST_CASE("premium discount rule matrix") {
+  const std::vector cases{{1000, Member::Premium, 900},{5000, Member::Guest,5000}};
+  for (const auto& [subtotal,member,expected] : cases)
+    REQUIRE(DiscountEngine{}.total(subtotal,member) == expected);
+}
+TEST_CASE("expired coupon uses deterministic clock") {
+  FakeClock clock{"2026-10-03T00:01:00Z"}; REQUIRE_FALSE(Coupon{midnight}.valid(clock));
+}`,
+go:`func TestDiscount(t *testing.T) {
+ tests:=[]struct{name string; subtotal int; premium bool; want int}{
+  {"premium",1000,true,900},{"boundary",0,true,0},{"guest",5000,false,5000},
+ }
+ for _,tt:=range tests { t.Run(tt.name,func(t *testing.T){ if got:=Total(tt.subtotal,tt.premium); got!=tt.want { t.Fatalf("got %d want %d",got,tt.want) } }) }
+}
+// A small fake repository verifies state; an injected Clock controls expiry.`,
+java:`@ParameterizedTest
+@CsvSource({"1000, PREMIUM, 900", "0, PREMIUM, 0", "5000, GUEST, 5000"})
+void calculatesDiscount(long subtotal, Member member, long expected) {
+  assertEquals(expected, new DiscountEngine().total(subtotal, member));
+}
+@Test void rejectsExpiredCoupon() {
+  var clock = Clock.fixed(Instant.parse("2026-10-03T00:01:00Z"), ZoneOffset.UTC);
+  assertFalse(coupon.isValid(clock));
+}`,
+typescript:`test.each([
+  {subtotal:1000, member:"premium", expected:900},
+  {subtotal:0, member:"premium", expected:0},
+  {subtotal:5000, member:"guest", expected:5000},
+])("$member at $subtotal → $expected", ({subtotal,member,expected}) => {
+  expect(new DiscountEngine().total(subtotal,member)).toBe(expected);
+});
+// Assert behavior; do not freeze private helper call order.`};
+
+export const strategyExamples:Examples={
+cpp:`struct PricingStrategy { virtual ~PricingStrategy()=default; virtual Money price(const Ride&) const=0; };
+struct SurgePricing final: PricingStrategy { double multiplier; Money price(const Ride& r) const override { return r.base()*multiplier; } };
+class RidePricing { const PricingStrategy& strategy_; public: RidePricing(const PricingStrategy& s):strategy_(s){} Money quote(const Ride& r)const{return strategy_.price(r);} };
+// A template or callable is a compile-time alternative when runtime replacement is unnecessary.`,
+go:`type PricingStrategy interface { Price(Ride) Money }
+type PricingFunc func(Ride) Money
+func (f PricingFunc) Price(r Ride) Money { return f(r) }
+type RidePricing struct { strategy PricingStrategy }
+func (p RidePricing) Quote(r Ride) Money { return p.strategy.Price(r) }
+var standard PricingFunc = func(r Ride) Money { return r.Base }
+// Composition selects the function; the context contains no ride-type branch.`,
+java:`interface PricingStrategy { Money price(Ride ride); }
+record SurgePricing(BigDecimal multiplier) implements PricingStrategy {
+  public Money price(Ride ride) { return ride.base().multiply(multiplier); }
+}
+final class RidePricing {
+  private final PricingStrategy strategy;
+  RidePricing(PricingStrategy strategy) { this.strategy=strategy; }
+  Money quote(Ride ride) { return strategy.price(ride); }
+}
+PricingStrategy standard = ride -> ride.base();`,
+typescript:`type PricingStrategy = (ride: Ride) => Money;
+const surge = (multiplier:number):PricingStrategy => ride => ride.base.multiply(multiplier);
+class RidePricing {
+  constructor(private readonly strategy:PricingStrategy) {}
+  quote(ride:Ride):Money { return this.strategy(ride); }
+}
+const registry:Record<RideType,PricingStrategy> = {standard:r=>r.base,surge:surge(1.8),corporate:corporatePrice};
+// Structural typing makes a named strategy object optional for simple behavior.`};
