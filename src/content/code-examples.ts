@@ -660,3 +660,81 @@ typescript:`type ReservationRequest = Readonly<{seatId: SeatId; window: TimeRang
 type ReserveResult = {ok:true; reservation:Reservation}|{ok:false; reason:"SEAT_CONFLICT"|"WINDOW_EXPIRED"};
 function createRequest(input: unknown): ReservationRequest { return reservationSchema.parse(input); }
 async function reserve(request: ReservationRequest): Promise<ReserveResult> { /* command with explicit outcome */ }`};
+
+export const cleanCodeExamples:Examples={
+cpp:`Receipt checkout(const Order& order, const Customer& customer) {
+  if (!customer.active()) throw InactiveCustomer{};
+  if (!order.is_valid()) throw InvalidOrder{};
+  const Money total = pricing_.price(order); // const communicates no reassignment
+  Payment payment = payments_.charge(total);
+  return orders_.confirm(order, payment); // RAII cleans acquired resources on failure
+}`,
+go:`func (s Service) Checkout(ctx context.Context, order Order, customer Customer) (Receipt, error) {
+ if !customer.Active { return Receipt{}, ErrInactiveCustomer }
+ if err := order.Validate(); err != nil { return Receipt{}, fmt.Errorf("validate order: %w", err) }
+ total := s.pricing.Price(order) // short local names are clear when scope is small
+ payment, err := s.payments.Charge(ctx, total); if err != nil { return Receipt{}, fmt.Errorf("charge payment: %w", err) }
+ return s.orders.Confirm(ctx, order, payment)
+}`,
+java:`Receipt checkout(Order order, Customer customer) {
+  if (!customer.isActive()) throw new InactiveCustomer();
+  order.validate();
+  var total = pricing.price(order);
+  var payment = payments.charge(total);
+  return orders.confirm(order, payment);
+} // a cohesive 30-line workflow may be clearer than five one-line wrappers`,
+typescript:`async function checkout({order, customer}: CheckoutRequest): Promise<Receipt> {
+  if (!customer.isActive) throw new InactiveCustomer();
+  order.validate();
+  const total = pricing.price(order);
+  const payment = await payments.charge(total);
+  return orders.confirm(order, payment);
+} // readonly request values and unions clarify intent; clever types can still obscure it`};
+
+export const advancedCleanCodeExamples:Examples={
+cpp:`struct Money { std::int64_t minor_units; Currency currency; };
+class Checkout {
+  Pricing& pricing_; PaymentPort& payments_; OrderStore& orders_;
+public: Receipt place(const PlaceOrder& command); // no SQLRow crosses the port
+};`,
+go:`type Money struct { MinorUnits int64; Currency Currency }
+type PlaceOrder struct { CustomerID CustomerID; Items []LineItem }
+type Checkout struct { pricing Pricing; payments PaymentPort; orders OrderStore }
+// Purpose-built values replace primitive clots without a giant context object.`,
+java:`record Money(long minorUnits, Currency currency) {}
+record PlaceOrder(CustomerId customerId, List<LineItem> items) {}
+final class Checkout {
+  private final Pricing pricing; private final PaymentPort payments; private final OrderRepository orders;
+  Receipt place(PlaceOrder command) { /* orchestration over domain types, not SQL rows */ }
+}`,
+typescript:`type Money = Readonly<{minorUnits:number; currency:Currency}>;
+type PlaceOrder = Readonly<{customerId:CustomerId; items:readonly LineItem[]}>;
+class Checkout {
+  constructor(private pricing:Pricing, private payments:PaymentPort, private orders:OrderStore) {}
+  place(command:PlaceOrder):Promise<Receipt> { /* explicit ownership and ports */ }
+}`};
+
+export const errorHandlingExamples:Examples={
+cpp:`std::expected<Receipt, CheckoutError> checkout(const Request& r) {
+  if (auto valid=validate(r); !valid) return std::unexpected(valid.error());
+  try { return persist(pay(reserve(r))); }
+  catch (const ProviderTimeout& e) { return std::unexpected(ProviderUnavailable{e.what()}); }
+} // RAII releases reservations during stack unwinding; bugs are not normal results`,
+go:`func Checkout(ctx context.Context, r Request) (Receipt, error) {
+ if err:=Validate(r); err!=nil { return Receipt{}, fmt.Errorf("validate checkout: %w",err) }
+ reservation,err:=inventory.Reserve(ctx,r.Items); if err!=nil { return Receipt{}, fmt.Errorf("reserve inventory: %w",err) }
+ payment,err:=payments.Charge(ctx,r.Total); if err!=nil { return Receipt{}, fmt.Errorf("charge payment: %w",err) }
+ return orders.Save(ctx,reservation,payment)
+} // callers use errors.Is/As; context cancellation remains inspectable`,
+java:`CheckoutResult checkout(Request request) {
+  var validation = validate(request); if (validation.isInvalid()) return validation;
+  try { return new Completed(orders.save(payments.charge(inventory.reserve(request)))); }
+  catch (PaymentDeclined expected) { return new Declined(expected.reason()); }
+  catch (ProviderTimeout failure) { throw new CheckoutUnavailable("payment provider timed out", failure); }
+} // expected outcomes may be values; unexpected failures preserve causes`,
+typescript:`type CheckoutResult = {ok:true;receipt:Receipt}|{ok:false;error:"INVALID"|"DECLINED"|"UNAVAILABLE"};
+async function checkout(request:Request):Promise<CheckoutResult>{
+ const invalid=validate(request); if(invalid)return {ok:false,error:"INVALID"};
+ try { return {ok:true,receipt:await complete(request)}; }
+ catch(error){ if(error instanceof PaymentDeclined)return {ok:false,error:"DECLINED"}; throw new CheckoutUnavailable("checkout failed",{cause:error}); }
+}`};

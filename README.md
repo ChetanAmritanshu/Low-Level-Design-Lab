@@ -14,7 +14,7 @@ The current release includes:
 
 - an interactive LLD-specific homepage and Object Lab
 - the complete 50-topic learning map
-- full production lessons for Chapters 01–11, from OOP Fundamentals through Interfaces & API Design
+- full production lessons for Chapters 01–14, from OOP Fundamentals through Error Handling
 - deterministic object-builder, classification, invariant, mutation, abstraction, dispatch, and hierarchy labs
 - a persistent C++, Go, Java, and TypeScript code-language preference
 - 10 preview systems in the Interview Arena
@@ -36,7 +36,7 @@ The 50 chapters progress through:
 4. Concurrency & Runtime — chapters 30–37
 5. Machine Coding — chapters 38–50
 
-Chapters 01–11 are implemented. Chapters 12–50 are represented with complete metadata and marked **Coming soon**.
+Chapters 01–14 are implemented. Chapters 15–50 are represented with complete metadata and marked **Coming soon**.
 
 ## Multi-language code philosophy
 
