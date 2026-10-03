@@ -91,7 +91,16 @@ class Cart {
 }`};
 
 export const ocpExamples:Examples={
-cpp:`class DiscountPolicy {
+cpp:`// BEFORE: every variant rewrites the same function.
+Money price(Money total, CustomerType type) {
+  if (type == CustomerType::Regular) return total;
+  if (type == CustomerType::Premium) return total.percentOff(10);
+  if (type == CustomerType::Employee) return total.percentOff(20);
+  throw UnknownCustomerType{};
+}
+
+// AFTER: the stable service delegates one observed variation.
+class DiscountPolicy {
 public:
   virtual ~DiscountPolicy() = default;
   virtual Money apply(Money total) const = 0;
@@ -107,7 +116,18 @@ public:
   }
 };
 // Templates, function objects, variant, or std::function can also extend behavior.`,
-go:`type DiscountPolicy interface { Apply(Money) Money }
+go:`// BEFORE: a growing switch is the change hotspot.
+func PriceByType(total Money, customerType string) Money {
+  switch customerType {
+  case "regular": return total
+  case "premium": return total.PercentOff(10)
+  case "employee": return total.PercentOff(20)
+  default: panic("unknown customer type")
+  }
+}
+
+// AFTER: an interface or function can express the extension point.
+type DiscountPolicy interface { Apply(Money) Money }
 type FestivalDiscount struct{}
 func (FestivalDiscount) Apply(total Money) Money { return total.PercentOff(15) }
 
@@ -119,7 +139,16 @@ func (PricingService) Price(total Money, policy DiscountPolicy) Money {
 // A function is also an honest extension point.
 type DiscountFunc func(Money) Money
 func (f DiscountFunc) Apply(total Money) Money { return f(total) }`,
-java:`public interface DiscountPolicy {
+java:`// BEFORE: every discount edits this stable service.
+Money price(Money total, CustomerType type) {
+  if (type == REGULAR) return total;
+  if (type == PREMIUM) return total.percentOff(10);
+  if (type == EMPLOYEE) return total.percentOff(20);
+  throw new IllegalArgumentException("unknown customer type");
+}
+
+// AFTER: implementations own independently changing rules.
+public interface DiscountPolicy {
   Money apply(Money total);
 }
 public final class FestivalDiscount implements DiscountPolicy {
@@ -133,7 +162,16 @@ public final class PricingService {
   }
 }
 // PartnerDiscount adds an implementation; PricingService stays stable.`,
-typescript:`interface DiscountPolicy {
+typescript:`// BEFORE: a growing conditional owns every variant.
+function priceByType(total: Money, type: CustomerType): Money {
+  if (type === "regular") return total;
+  if (type === "premium") return total.percentOff(10);
+  if (type === "employee") return total.percentOff(20);
+  throw new Error("unknown customer type");
+}
+
+// AFTER: structural typing keeps the boundary lightweight.
+interface DiscountPolicy {
   apply(total: Money): Money;
 }
 const festivalDiscount: DiscountPolicy = {
@@ -149,7 +187,21 @@ class PricingService {
 // Structural typing keeps the extension contract lightweight.`};
 
 export const lspExamples:Examples={
-cpp:`class ReadableStorage {
+cpp:`// VIOLATION: the broad shape forces a dishonest operation.
+class Storage {
+public:
+  virtual Result<Data> load(const Key&) const = 0;
+  virtual Result<void> save(const Key&, const Data&) = 0;
+};
+class ReadOnlyArchive final : public Storage {
+  Result<Data> load(const Key& key) const override;
+  Result<void> save(const Key&, const Data&) override {
+    return Error::unsupported("archive is read-only");
+  }
+};
+
+// REDESIGN: callers request an honest capability.
+class ReadableStorage {
 public:
   virtual ~ReadableStorage() = default;
   virtual Result<Data> load(const Key&) const = 0;
@@ -164,7 +216,17 @@ class S3Storage final : public ReadableStorage, public WritableStorage {
   Result<void> save(const Key& key, const Data& data) override;
 };
 // override and const verify shape; contract tests verify behavior and errors.`,
-go:`type ReadableStorage interface {
+go:`// VIOLATION: compilation cannot detect the silent no-op.
+type Storage interface {
+  Load(context.Context, string) ([]byte, error)
+  Save(context.Context, string, []byte) error
+}
+type BrokenArchive struct{}
+func (BrokenArchive) Load(ctx context.Context, key string) ([]byte, error) { return read(ctx, key) }
+func (BrokenArchive) Save(context.Context, string, []byte) error { return nil }
+
+// REDESIGN: Go composes the capabilities the caller actually needs.
+type ReadableStorage interface {
   Load(context.Context, string) ([]byte, error)
 }
 type WritableStorage interface {
@@ -175,7 +237,20 @@ func (a *ReadOnlyArchive) Load(ctx context.Context, key string) ([]byte, error) 
   return a.read(ctx, key)
 }
 // Go has no class inheritance; implicit satisfaction cannot prove behavior.`,
-java:`public interface ReadableStorage {
+java:`// VIOLATION: the implementation cannot honor the broad contract.
+interface Storage {
+  byte[] load(String key);
+  void save(String key, byte[] data);
+}
+final class ReadOnlyArchive implements Storage {
+  public byte[] load(String key) { return archive.read(key); }
+  public void save(String key, byte[] data) {
+    throw new UnsupportedOperationException("archive is read-only");
+  }
+}
+
+// REDESIGN: split the contract by capability.
+public interface ReadableStorage {
   byte[] load(String key) throws StorageException;
 }
 public interface WritableStorage {
@@ -186,7 +261,18 @@ public final class ReadOnlyArchive implements ReadableStorage {
 }
 // Avoid implementing save() only to throw UnsupportedOperationException.
 // Every writable implementation runs the same behavioral contract suite.`,
-typescript:`interface ReadableStorage {
+typescript:`// VIOLATION: structural typing checks shape, not the silent lie.
+interface Storage {
+  load(key: string): Promise<Uint8Array | undefined>;
+  save(key: string, data: Uint8Array): Promise<void>;
+}
+const brokenArchive: Storage = {
+  load: key => readArchive(key),
+  save: async (_key, _data) => { /* silently ignored */ },
+};
+
+// REDESIGN: expose only capabilities the object can preserve.
+interface ReadableStorage {
   load(key: string): Promise<Uint8Array | undefined>;
 }
 interface WritableStorage {

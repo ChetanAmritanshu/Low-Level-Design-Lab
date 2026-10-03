@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { ArrowRight, Rotate } from "@/components/ui/icons";
 
-const variants=["regular","premium","employee","festival","coupon","loyalty","corporate","partner"] as const;
+const variants=["regular","premium","employee","festival","coupon","loyalty","corporate","partner","flash-sale","regional"] as const;
 export function BranchGrowthLab(){const[count,setCount]=useState(3);const risk=count<5?"LOW":count<7?"RISING":"HIGH";return <div className="principle-lab lab-panel"><div className="lab-toolbar"><div><span className={count>5?"alert-dot":"live-dot"}/> BRANCH GROWTH</div><span>{count} PRICING VARIANTS</span></div><div className="branch-stage"><div className="branch-code"><small>PricingService.calculate()</small>{variants.slice(0,count).map((name,i)=><code key={name}><b>{i===0?"if":"else if"}</b> type == &quot;{name}&quot; <i>→ apply {name}</i></code>)}</div><div className="change-pulses" aria-hidden="true">{variants.slice(3,count).map(name=><span key={name}>{name.toUpperCase()} EDITS CORE</span>)}</div></div><div className="object-metrics" aria-live="polite">{[["VARIANTS",String(count)],["BRANCHES",String(count)],["CENTRAL FILE EDITS",String(Math.max(1,count-2))],["TEST SURFACE",count<5?"LOW":"HIGH"],["REGRESSION RISK",risk]].map(([k,v])=><span key={k}><small>{k}</small><b className={v==="HIGH"?"bad":""}>{v}</b></span>)}</div><div className="lab-actions"><button className="quiet-lab-button" type="button" disabled={count===variants.length} onClick={()=>setCount(v=>Math.min(variants.length,v+1))}>ADD REQUIREMENT</button><button className="lab-button" type="button" onClick={()=>setCount(3)}><Rotate/>RESET</button></div></div>}
 
 const registryEntries=["festival","coupon","corporate","partner"] as const;
