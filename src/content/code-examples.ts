@@ -577,3 +577,86 @@ class CheckoutService {
     return Receipt.from(await this.orders.save(order));
   }
 }`};
+
+export const ispDipExamples:Examples={
+cpp:`struct OrderStore { virtual ~OrderStore()=default; virtual void save(const Order&)=0; };
+struct PaymentProcessor { virtual ~PaymentProcessor()=default; virtual Payment charge(Money)=0; };
+class CheckoutService {
+  OrderStore& orders_; PaymentProcessor& payments_;
+public:
+  CheckoutService(OrderStore& o, PaymentProcessor& p):orders_(o),payments_(p){}
+  Receipt checkout(const Draft& d){ auto order=Order::confirm(d,payments_.charge(d.total())); orders_.save(order); return Receipt{order}; }
+}; // references are injected; application policy does not include a Stripe header`,
+go:`type OrderStore interface { Save(context.Context, Order) error }
+type PaymentProcessor interface { Charge(context.Context, Money) (Payment, error) }
+type Checkout struct { orders OrderStore; payments PaymentProcessor }
+func NewCheckout(o OrderStore, p PaymentProcessor) Checkout { return Checkout{o,p} }
+// Interfaces live beside the consuming use case; StripeAdapter satisfies them implicitly.`,
+java:`interface OrderStore { void save(Order order); }
+interface PaymentProcessor { Payment charge(Money total); }
+final class CheckoutService {
+  private final OrderStore orders; private final PaymentProcessor payments;
+  CheckoutService(OrderStore o, PaymentProcessor p){ orders=o; payments=p; }
+  Receipt checkout(Draft d){ var order=Order.confirm(d,payments.charge(d.total())); orders.save(order); return Receipt.from(order); }
+} // constructor injection makes dependencies visible and the object valid`,
+typescript:`interface OrderStore { save(order: Order): Promise<void>; }
+interface PaymentProcessor { charge(total: Money): Promise<Payment>; }
+class CheckoutService {
+  constructor(private orders: OrderStore, private payments: PaymentProcessor) {}
+  async checkout(draft: Draft) { const payment=await this.payments.charge(draft.total); const order=Order.confirm(draft,payment); await this.orders.save(order); return Receipt.from(order); }
+} // structural ports describe only what this consumer needs`};
+
+export const couplingExamples:Examples={
+cpp:`class RideService {
+  FarePolicy& fares_; DriverFinder& drivers_; TripStore& trips_;
+public:
+  Trip request(const RideRequest& r){ auto quote=fares_.quote(r.route()); auto driver=drivers_.nearest(r.pickup()); return trips_.create(r,quote,driver); }
+}; // cohesive orchestration; policy, search, and persistence change independently`,
+go:`type RideService struct { fares FarePolicy; drivers DriverFinder; trips TripStore }
+func (s RideService) Request(ctx context.Context, r RideRequest) (Trip,error) {
+ q:=s.fares.Quote(r.Route); d,err:=s.drivers.Nearest(ctx,r.Pickup); if err!=nil{return Trip{},err}; return s.trips.Create(ctx,r,q,d)
+} // pass a request value, not twelve temporally ordered setters`,
+java:`final class RideService {
+  private final FarePolicy fares; private final DriverFinder drivers; private final TripRepository trips;
+  Trip request(RideRequest r){ var quote=fares.quote(r.route()); var driver=drivers.nearest(r.pickup()); return trips.create(r,quote,driver); }
+} // the use case coordinates; collaborators retain cohesive vocabularies`,
+typescript:`class RideService {
+  constructor(private fares: FarePolicy, private drivers: DriverFinder, private trips: TripStore) {}
+  async request(input: RideRequest): Promise<Trip> { const [quote,driver]=await Promise.all([this.fares.quote(input.route),this.drivers.nearest(input.pickup)]); return this.trips.create(input,quote,driver); }
+} // explicit data coupling is preferable to hidden global or temporal coupling`};
+
+export const compositionExamples:Examples={
+cpp:`class Vehicle { std::unique_ptr<Movement> movement_; std::unique_ptr<Armor> armor_;
+public: Vehicle(std::unique_ptr<Movement> m,std::unique_ptr<Armor> a):movement_(std::move(m)),armor_(std::move(a)){} void travel(){movement_->move();} };
+// Ownership is explicit; capabilities vary without multiplying subclasses.`,
+go:`type Movement interface { Move() error }
+type Vehicle struct { Movement Movement; Armor Armor }
+func (v Vehicle) Travel() error { return v.Movement.Move() }
+// Embedding can promote methods, but named fields make delegation and ownership clearer.`,
+java:`final class Vehicle {
+  private final Movement movement; private final Armor armor;
+  Vehicle(Movement m, Armor a){ movement=m; armor=a; }
+  void travel(){ movement.move(); }
+} // delegate replaceable behavior; do not inherit only to reuse lines`,
+typescript:`class Vehicle {
+  constructor(private movement: Movement, private armor: Armor) {}
+  travel(){ return this.movement.move(); }
+}
+// Structural capabilities can be plain objects; composition keeps axes independent.`};
+
+export const apiDesignExamples:Examples={
+cpp:`struct ReservationRequest { static expected<ReservationRequest,ValidationError> create(SeatId, TimeRange); };
+expected<Reservation,ReserveError> reserve(const ReservationRequest& request);
+// A request value validates cross-field rules; errors preserve the reason.`,
+go:`type ReservationRequest struct { Seat SeatID; Window TimeRange }
+func NewReservationRequest(seat SeatID, window TimeRange) (ReservationRequest,error) { if !window.Valid(){return ReservationRequest{},ErrInvalidWindow}; return ReservationRequest{seat,window},nil }
+func (s *Service) Reserve(ctx context.Context, req ReservationRequest) (Reservation,error)`,
+java:`public record ReservationRequest(SeatId seat, TimeRange window) {
+  public ReservationRequest { Objects.requireNonNull(seat); if(!window.isValid()) throw new IllegalArgumentException("window"); }
+}
+sealed interface ReserveResult permits Reserved, SeatConflict, WindowExpired {}
+ReserveResult reserve(ReservationRequest request);`,
+typescript:`type ReservationRequest = Readonly<{seatId: SeatId; window: TimeRange}>;
+type ReserveResult = {ok:true; reservation:Reservation}|{ok:false; reason:"SEAT_CONFLICT"|"WINDOW_EXPIRED"};
+function createRequest(input: unknown): ReservationRequest { return reservationSchema.parse(input); }
+async function reserve(request: ReservationRequest): Promise<ReserveResult> { /* command with explicit outcome */ }`};
