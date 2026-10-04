@@ -837,3 +837,121 @@ class RidePricing {
 }
 const registry:Record<RideType,PricingStrategy> = {standard:r=>r.base,surge:surge(1.8),corporate:corporatePrice};
 // Structural typing makes a named strategy object optional for simple behavior.`};
+
+export const factoryExamples:Examples={
+cpp:`std::unique_ptr<PricingStrategy> make_pricing(RideType type, Dependencies& d) {
+  switch(type) {
+    case RideType::Standard: return std::make_unique<StandardPricing>();
+    case RideType::Surge: return std::make_unique<SurgePricing>(d.surge, d.clock, d.region);
+    case RideType::Corporate: return std::make_unique<CorporatePricing>(d.contracts, d.tax);
+  }
+  throw UnknownRideType{};
+} // unique_ptr transfers one clear owner; templates can avoid runtime selection when the type is known`,
+go:`type Creator func(Dependencies) (PricingStrategy, error)
+var creators = map[RideType]Creator{
+ Standard: func(Dependencies) (PricingStrategy,error) { return StandardPricing{},nil },
+ Surge: func(d Dependencies) (PricingStrategy,error) { return NewSurgePricing(d.Surge,d.Clock,d.Region) },
+}
+func NewPricingStrategy(kind RideType, d Dependencies) (PricingStrategy,error) {
+ create,ok:=creators[kind]; if !ok{return nil,fmt.Errorf("unknown ride type %q",kind)}; return create(d)
+}`,
+java:`final class PaymentProcessorFactory {
+  PaymentProcessor create(Merchant merchant) {
+    return switch (merchant.provider()) {
+      case STRIPE -> new StripeProcessor(keys.forMerchant(merchant.id()), clock);
+      case ADYEN -> new AdyenProcessor(config.adyen(), fraudRules);
+    };
+  }
+}
+abstract class DocumentImporter { final Document run(File f){return createParser().parse(f);} abstract Parser createParser(); }`,
+typescript:`type Creator = (deps:Dependencies) => PricingStrategy;
+const creators = new Map<RideType,Creator>([
+  ["standard", () => standardPricing],
+  ["surge", d => createSurgePricing(d.surge,d.clock,d.region)],
+]);
+export function createPricingStrategy(type:RideType,deps:Dependencies):PricingStrategy {
+  const create=creators.get(type); if(!create) throw new UnknownRideType(type); return create(deps);
+} // a factory can be a function; registration is justified only by real plugin pressure`};
+
+export const builderExamples:Examples={
+cpp:`class NotificationBuilder {
+  Recipient recipient_; std::string body_; Priority priority_{Priority::Normal}; std::vector<File> attachments_;
+public:
+  NotificationBuilder& recipient(Recipient r){recipient_=std::move(r);return *this;}
+  NotificationBuilder& body(std::string b){body_=std::move(b);return *this;}
+  Notification build() && { validate(recipient_,body_); return Notification{std::move(recipient_),std::move(body_),priority_,std::move(attachments_)}; }
+}; // return a value; move resources; avoid unnecessary heap ownership`,
+go:`type ServerOption func(*Server) error
+func WithTimeout(d time.Duration) ServerOption { return func(s *Server) error { if d<=0{return errors.New("timeout")}; s.timeout=d; return nil } }
+func WithLogger(log *slog.Logger) ServerOption { return func(s *Server) error { s.log=log; return nil } }
+func NewServer(addr string, options ...ServerOption) (*Server,error) {
+ s:=&Server{addr:addr,timeout:5*time.Second,log:slog.Default()}; for _,apply:=range options {if err:=apply(s);err!=nil{return nil,err}}; return s,nil
+} // functional options often fit Go better than a fluent Builder type`,
+java:`public final class Notification {
+  private final Recipient recipient; private final String body; private final List<Attachment> attachments;
+  private Notification(Builder b){recipient=b.recipient;body=b.body;attachments=List.copyOf(b.attachments);}
+  static final class Builder {
+    private Recipient recipient; private String body; private final List<Attachment> attachments=new ArrayList<>();
+    Builder recipient(Recipient r){recipient=r;return this;} Builder body(String v){body=v;return this;}
+    Notification build(){Objects.requireNonNull(recipient);if(body==null||body.isBlank())throw new IllegalStateException("body");return new Notification(this);}
+  }
+}`,
+typescript:`type NotificationOptions = {recipient:Recipient;body:string;priority?:Priority;trackingEnabled?:boolean};
+function createNotification(options:NotificationOptions):Notification {
+  if(!options.body.trim()) throw new Error("body is required");
+  return Object.freeze({...options,priority:options.priority ?? "normal",trackingEnabled:options.trackingEnabled ?? false});
+}
+// Named object parameters beat a classical Builder here. Use a builder only for real stepwise state or a complex fluent API.`};
+
+export const singletonExamples:Examples={
+cpp:`class MetricsRegistry {
+public: static MetricsRegistry& instance() { static MetricsRegistry value; return value; } // thread-safe initialization since C++11
+private: MetricsRegistry()=default;
+};
+// Prefer: Application owns MetricsRegistry metrics; services receive Metrics& explicitly.
+// One owner preserves lifetime without making every dependency global.`,
+go:`// Package initialization can create one process-wide value, but callers then hide a dependency.
+var defaultMetrics = NewMetricsRegistry()
+
+type PaymentService struct { metrics Metrics; repo PaymentRepository }
+func NewPaymentService(m Metrics, r PaymentRepository) PaymentService { return PaymentService{m,r} }
+// sync.Once safely initializes lazily; it does not make mutable state or its API safe.`,
+java:`public enum ProcessMetrics { INSTANCE; /* JVM-safe singleton identity */ }
+
+final class PaymentApplication {
+  private final Metrics metrics = new MetricsRegistry();
+  PaymentService payments(PaymentRepository repo) { return new PaymentService(repo, metrics); }
+}
+// DI singleton scope means one container-owned instance; it does not require global getInstance().`,
+typescript:`// ES modules are cached per module graph/runtime—not universally across workers, tests, realms, or serverless instances.
+const metrics = new MetricsRegistry();
+export function createPaymentApplication(config:Config) {
+  const repository=createRepository(config.database);
+  return new PaymentService(repository,metrics); // explicit composition is still visible here
+}
+// exporting a mutable object globally makes test isolation and multi-instance evolution harder.`};
+
+export const observerExamples:Examples={
+cpp:`class Subscription { Subject* source_; Token token_; public: ~Subscription(){ if(source_) source_->unsubscribe(token_); } };
+using OrderListener = std::function<void(const OrderConfirmed&)>;
+// Subject stores non-owning callbacks and returns an RAII token; copy listeners before notify if callbacks may unsubscribe.
+auto subscription = orders.subscribe([&email](const OrderConfirmed& e){ email.send(e.order_id); });`,
+go:`type OrderObserver func(OrderConfirmed) error
+type OrderEvents struct { observers []OrderObserver }
+func (e *OrderEvents) Subscribe(fn OrderObserver) (unsubscribe func()) { /* add token; remove by token */ return func(){/* remove */} }
+func (e *OrderEvents) Emit(event OrderConfirmed) []error { var errs []error; for _,fn:=range e.observers {if err:=fn(event);err!=nil{errs=append(errs,err)}}; return errs }
+// A channel changes delivery, blocking, ownership, and failure semantics; it is not just different syntax.`,
+java:`interface OrderObserver { void onOrderConfirmed(OrderConfirmed event); }
+final class OrderEvents {
+  private final List<OrderObserver> observers = new ArrayList<>();
+  AutoCloseable subscribe(OrderObserver o){observers.add(o);return () -> observers.remove(o);}
+  List<RuntimeException> emit(OrderConfirmed e){var failures=new ArrayList<RuntimeException>(); for(var o:List.copyOf(observers))try{o.onOrderConfirmed(e);}catch(RuntimeException x){failures.add(x);} return failures;}
+}`,
+typescript:`type Listener<T> = (event:Readonly<T>) => void | Promise<void>;
+class EventSource<T> {
+  private listeners=new Set<Listener<T>>();
+  subscribe(listener:Listener<T>){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
+  emitSync(event:Readonly<T>){for(const listener of [...this.listeners]) listener(event);}
+}
+const unsubscribe=orders.subscribe(event=>email.send(event.orderId));
+// addEventListener/removeEventListener express the same lifecycle shape in the browser.`};
