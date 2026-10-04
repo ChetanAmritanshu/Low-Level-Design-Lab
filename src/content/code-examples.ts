@@ -955,3 +955,97 @@ class EventSource<T> {
 }
 const unsubscribe=orders.subscribe(event=>email.send(event.orderId));
 // addEventListener/removeEventListener express the same lifecycle shape in the browser.`};
+
+export const decoratorExamples:Examples={
+cpp:`struct HttpClient { virtual ~HttpClient()=default; virtual Response send(const Request&)=0; };
+class RetryClient final: public HttpClient {
+  std::unique_ptr<HttpClient> inner_; int attempts_;
+public: RetryClient(std::unique_ptr<HttpClient> inner,int n):inner_(std::move(inner)),attempts_(n){}
+  Response send(const Request& r) override { for(int n=1;;++n)try{return inner_->send(r);}catch(const Transient&){if(n==attempts_)throw;} }
+};
+// unique_ptr forms an ownership chain; wrapper order defines semantics.`,
+go:`type RoundTripper interface { RoundTrip(Request) (Response,error) }
+type RoundTripFunc func(Request) (Response,error)
+func (f RoundTripFunc) RoundTrip(r Request)(Response,error){return f(r)}
+func WithMetrics(next RoundTripper, metrics Metrics) RoundTripper {
+ return RoundTripFunc(func(r Request)(Response,error){start:=time.Now();resp,err:=next.RoundTrip(r);metrics.Observe(time.Since(start),err);return resp,err})
+}
+// Higher-order middleware often expresses Decorator more naturally than wrapper classes.`,
+java:`interface HttpClient { Response send(Request request); }
+final class LoggingClient implements HttpClient {
+  private final HttpClient inner; private final Logger log;
+  LoggingClient(HttpClient inner,Logger log){this.inner=inner;this.log=log;}
+  public Response send(Request request){log.info("http.started");try{return inner.send(request);}finally{log.info("http.completed");}}
+}
+HttpClient client=new MetricsClient(new RetryClient(new LoggingClient(real,log),3),metrics);`,
+typescript:`type HttpClient={send(request:Request):Promise<Response>};
+const withRetry=(inner:HttpClient,attempts:number):HttpClient=>({async send(request){for(let n=1;;n++)try{return await inner.send(request)}catch(error){if(n===attempts)throw error}}});
+const withMetrics=(inner:HttpClient,metrics:Metrics):HttpClient=>({async send(request){const start=performance.now();try{return await inner.send(request)}finally{metrics.observe(performance.now()-start)}}});
+const client=withMetrics(withRetry(realClient,3),metrics);`};
+
+export const adapterFacadeExamples:Examples={
+cpp:`class StripeAdapter final: public PaymentProcessor {
+  LegacyStripeSdk& sdk_; public: explicit StripeAdapter(LegacyStripeSdk& sdk):sdk_(sdk){}
+  PaymentResult charge(const PaymentRequest& r) override {
+    try { auto raw=sdk_.makeCharge(r.total().minor_units(),r.token().value(),r.total().currency()); return translate(raw); }
+    catch(const StripeDeclined& e){ throw PaymentDeclined{safe_reason(e)}; }
+  }
+}; // non-owning reference: SDK lifetime must outlive adapter`,
+go:`// Consumer package owns the small contract.
+type PaymentProcessor interface { Charge(context.Context,PaymentRequest)(PaymentResult,error) }
+type StripeAdapter struct { sdk *stripe.Client }
+func (a StripeAdapter) Charge(ctx context.Context,r PaymentRequest)(PaymentResult,error){
+ raw,err:=a.sdk.MakeCharge(ctx,stripe.Params{Cents:r.Total.MinorUnits,Token:r.Token.String()}); if errors.Is(err,stripe.ErrDeclined){return PaymentResult{},ErrPaymentDeclined}; if err!=nil{return PaymentResult{},fmt.Errorf("stripe charge: %w",err)}; return translate(raw),nil
+}
+type CheckoutFacade struct{/* inventory, pricing, payments, orders */}`,
+java:`final class StripeAdapter implements PaymentProcessor {
+  private final LegacyStripeSdk sdk;
+  public PaymentResult charge(PaymentRequest request){try{return map(sdk.makeCharge(request.total().minorUnits(),request.token().value(),request.total().currency().code()));}catch(StripeDeclined e){throw new PaymentDeclined(e.safeReason(),e);}}
+}
+final class CheckoutFacade { Receipt placeOrder(PlaceOrder command){var priced=pricing.calculate(command);var hold=inventory.reserve(priced.items());var payment=payments.charge(priced.payment());return orders.save(priced,hold,payment);} }`,
+typescript:`interface PaymentProcessor{charge(request:PaymentRequest):Promise<PaymentResult>}
+const stripeAdapter=(sdk:StripeSdk):PaymentProcessor=>({async charge(request){try{const raw=await sdk.makeCharge({amount_in_cents:request.total.minorUnits,source_token:request.token,currency_code:request.total.currency});return mapStripeResult(raw)}catch(error){if(isStripeDecline(error))throw new PaymentDeclined(safeReason(error));throw error}}});
+// Structural compatibility may remove scaffolding only when semantics already align; units and errors still need translation.`};
+
+export const commandExamples:Examples={
+cpp:`struct Command { virtual ~Command()=default; virtual void execute()=0; virtual void undo()=0; };
+class DeleteText final: public Command { Document& doc_; Range range_; std::string removed_;
+public: DeleteText(Document& d,Range r):doc_(d),range_(r){} void execute()override{removed_=doc_.erase(range_);} void undo()override{doc_.insert(range_.start,removed_);} };
+// History owns executed command objects; receiver references must outlive history.`,
+go:`type Command func(context.Context) error
+type Queue struct { pending []Command }
+func (q *Queue) ExecuteNext(ctx context.Context) error {cmd:=q.pending[0];q.pending=q.pending[1:];return cmd(ctx)}
+// A closure is enough for simple execution. Undoable commands benefit from structs storing prior state and receiver identity.`,
+java:`interface Command { void execute(); void undo(); }
+final class DeleteTextCommand implements Command {
+  private final Document document; private final Range range; private String removed;
+  public void execute(){removed=document.delete(range);} public void undo(){document.insert(range.start(),removed);}
+}
+final class History { private final Deque<Command> done=new ArrayDeque<>(); void execute(Command c){c.execute();done.push(c);} }`,
+typescript:`interface Command{readonly name:string;execute():Promise<void>;undo?():Promise<void>}
+class InsertText implements Command {readonly name="InsertText";private before="";constructor(private doc:Document,private text:string){}async execute(){this.before=this.doc.value;this.doc.insert(this.text)}async undo(){this.doc.value=this.before}}
+// CapturePaymentCommand is not automatically retryable: idempotency belongs to its domain contract.`};
+
+export const stateExamples:Examples={
+cpp:`using OrderState=std::variant<Pending,Paid,Shipped,Delivered,Cancelled,Refunded>;
+expected<OrderState,InvalidTransition> ship(OrderState state,TrackingId tracking){return std::visit(overloaded{
+ [&](Paid){return OrderState{Shipped{tracking}};},
+ [&](auto){return expected<OrderState,InvalidTransition>{unexpected(InvalidTransition{"ship"})};}
+},state);} // variant encodes state-specific data without nullable tracking fields`,
+go:`type OrderState string
+const(Pending OrderState="pending";Paid OrderState="paid";Shipped OrderState="shipped")
+var transitions=map[OrderState]map[Action]OrderState{Pending:{Pay:Paid,Cancel:Cancelled},Paid:{Ship:Shipped,Refund:Refunded}}
+func Transition(current OrderState,action Action)(OrderState,error){next,ok:=transitions[current][action];if !ok{return current,InvalidTransition{current,action}};return next,nil}
+// A typed enum + table is often clearer than state objects for a small FSM.`,
+java:`interface OrderState { default OrderState ship(TrackingId id){throw new InvalidTransition(getClass().getSimpleName(),"ship");} }
+record PaidState(PaymentId payment) implements OrderState { public OrderState ship(TrackingId id){return new ShippedState(payment,id);} }
+record ShippedState(PaymentId payment,TrackingId tracking) implements OrderState {}
+final class Order { private OrderState state; void ship(TrackingId id){state=state.ship(id);} }`,
+typescript:`type Order =
+ | {state:"pending"}
+ | {state:"paid";paymentId:string}
+ | {state:"shipped";paymentId:string;trackingId:string}
+ | {state:"delivered";trackingId:string}
+ | {state:"cancelled";reason:string};
+function ship(order:Order,trackingId:string):Order{if(order.state!=="paid")throw new InvalidTransition(order.state,"ship");return {state:"shipped",paymentId:order.paymentId,trackingId}}
+// Discriminated unions make state-specific data available only in the matching branch.`};
