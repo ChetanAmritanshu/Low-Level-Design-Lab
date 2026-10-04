@@ -1049,3 +1049,66 @@ typescript:`type Order =
  | {state:"cancelled";reason:string};
 function ship(order:Order,trackingId:string):Order{if(order.state!=="paid")throw new InvalidTransition(order.state,"ship");return {state:"shipped",paymentId:order.paymentId,trackingId}}
 // Discriminated unions make state-specific data available only in the matching branch.`};
+
+export const templateChainExamples:Examples={
+cpp:`class ImportWorkflow {
+public: virtual ~ImportWorkflow()=default;
+ ImportResult import_file(File f){auto raw=open(f);validate_format(raw);auto doc=parse(raw);normalize(doc);persist(doc);report(doc);return {doc};}
+protected: virtual Document parse(Bytes)=0; virtual void validate_format(Bytes){}; virtual void normalize(Document&){}
+}; // Non-Virtual Interface: the public skeleton stays fixed; protected virtual hooks are the subclass API.
+using Handler=std::function<Result(const PurchaseRequest&,Next)>; // a function vector may be clearer than owned linked objects`,
+go:`type Parser interface{ Parse([]byte)(Document,error) }
+type Importer struct{ parser Parser; store Store }
+func(i Importer) Import(ctx context.Context,b []byte)(Document,error){doc,err:=i.parser.Parse(b);if err!=nil{return Document{},err};normalize(&doc);return doc,i.store.Save(ctx,doc)}
+type Handler func(context.Context,Request) Response
+type Middleware func(Handler) Handler
+// Go solves Template Method pressure with composition; middleware composes a chain without class inheritance.`,
+java:`abstract class ImportWorkflow {
+ public final ImportResult importFile(File file){var raw=open(file);validateFormat(raw);var doc=parse(raw);normalize(doc);persist(doc);report(doc);return new ImportResult(doc);}
+ protected abstract Document parse(byte[] raw); protected void validateFormat(byte[] raw){} protected void normalize(Document doc){}
+}
+interface Handler { Result handle(PurchaseRequest request, Next next); }`,
+typescript:`abstract class ImportWorkflow { async importFile(file:File){const raw=await this.open(file);this.validate(raw);const doc=await this.parse(raw);this.normalize(doc);await this.persist(doc);return doc} protected abstract parse(raw:ArrayBuffer):Promise<Document>; protected normalize(_doc:Document){} }
+type Handler=(ctx:Context,next:()=>Promise<void>)=>Promise<void>;
+async function run(handlers:Handler[],ctx:Context){let i=-1;const next=async()=>{const h=handlers[++i];if(h)await h(ctx,next)};await next()}
+// Array pipelines make order and short-circuit semantics explicit.`};
+
+export const dependencyInjectionExamples:Examples={
+cpp:`class CheckoutService { OrderRepository& orders_; PaymentProcessor& payments_;
+public: CheckoutService(OrderRepository& o,PaymentProcessor& p):orders_(o),payments_(p){} };
+int main(){DbPool db(config);PostgresOrders orders(db);StripePayments payments(http);CheckoutService checkout(orders,payments);}
+// References are non-owning: the composition root must keep dependencies alive longer than consumers.`,
+go:`func BuildApplication(cfg Config) *App {
+ db:=NewDB(cfg.Database); repo:=NewOrderRepository(db); payments:=NewStripeProcessor(cfg.Stripe,NewHTTPClient());
+ checkout:=NewCheckoutService(repo,payments,RealClock{}); return NewApp(checkout)
+}
+// Manual wiring is DI. Add a container only when graph/scopes genuinely justify it.`,
+java:`final class CheckoutService { private final OrderRepository orders; private final PaymentProcessor payments;
+ CheckoutService(OrderRepository orders,PaymentProcessor payments){this.orders=Objects.requireNonNull(orders);this.payments=Objects.requireNonNull(payments);}
+}
+var service=new CheckoutService(new PostgresOrderRepository(pool),new StripePaymentProcessor(http));
+// Framework annotations are optional; required dependencies remain explicit and construction-valid.`,
+typescript:`const PAYMENT=Symbol("PaymentProcessor"); // runtime containers need tokens because interfaces are erased
+class CheckoutService { constructor(readonly orders:OrderRepository,readonly payments:PaymentProcessor,readonly clock:Clock){} }
+export function buildApp(config:Config){const repo=new PostgresOrders(connect(config.db));const payment=stripeAdapter(new StripeClient(config.key));return new App(new CheckoutService(repo,payment,new SystemClock()))}
+// Transparent manual wiring is often easier to inspect than reflective container magic.`};
+
+export const domainModelingExamples:Examples={
+cpp:`class Money { std::int64_t minor_; Currency currency_; public: Money(std::int64_t minor,Currency c):minor_(minor),currency_(c){if(minor<0)throw InvalidMoney{};} friend bool operator==(const Money&,const Money&)=default; };
+class Booking { BookingId id_; std::vector<SeatId> seats_; BookingState state_;
+public: void confirm(const PaymentReceipt& paid){if(state_!=BookingState::Pending||seats_.empty())throw InvalidBooking{};state_=BookingState::Confirmed;} };
+// Value semantics suit Money; entity identity and history distinguish Booking.`,
+go:`type Money struct{ minor int64; currency Currency }
+func NewMoney(minor int64,c Currency)(Money,error){if minor<0{return Money{},ErrNegativeMoney};return Money{minor,c},nil}
+type Booking struct{id BookingID; seats []SeatID; state BookingState}
+func(b *Booking) Confirm(payment PaymentReceipt) error {if b.state!=Pending||len(b.seats)==0{return ErrInvalidBooking};b.state=Confirmed;return nil}
+// Unexported fields plus constructors/methods protect invariants without inheritance.`,
+java:`record Money(long minorUnits,Currency currency){Money{if(minorUnits<0)throw new IllegalArgumentException("negative money");Objects.requireNonNull(currency);}}
+final class Booking {private final BookingId id;private final List<SeatId> seats;private BookingStatus status;
+ void confirm(PaymentReceipt payment){if(status!=PENDING||seats.isEmpty())throw new InvalidBooking();status=CONFIRMED;}}
+// Records fit values; behavior-rich classes fit identity and transitions when rules justify them.`,
+typescript:`type BookingId=string&{readonly __brand:"BookingId"};
+type Money=Readonly<{minorUnits:number;currency:"INR"|"USD"}>;
+type Booking={id:BookingId;seats:readonly SeatId[];state:{kind:"pending";expiresAt:Date}|{kind:"confirmed";paymentId:string}|{kind:"cancelled";reason:string}};
+function confirm(b:Booking,paymentId:string,now:Date):Booking{if(b.state.kind!=="pending"||b.state.expiresAt<=now||!b.seats.length)throw new InvalidBooking();return {...b,state:{kind:"confirmed",paymentId}}}
+// Branded IDs, readonly values, and discriminated states can model a domain without class-per-noun.`};

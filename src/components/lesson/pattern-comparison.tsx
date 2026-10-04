@@ -1,14 +1,16 @@
 const rows=[
-  ["Strategy","vary an algorithm","behavior","one selected behavior","composition / function","tiny stable branch","State"],
-  ["Factory","choose and construct an object","creation","creator → product","function / registry","factory for every constructor","Builder"],
-  ["Builder","assemble one complex object","creation","steps → one product","fluent / options","ceremony for simple values","Factory"],
-  ["Singleton","control one instance + access","lifetime","one shared instance","static / module / DI scope","hidden mutable global state","global variable"],
-  ["Observer","fan an event to reactions","behavior","one-to-many","subscription / callbacks","hidden critical workflow","Pub/Sub"],
-  ["Decorator","stack optional behavior","structure","wrapper → same contract","composition / middleware","untraceable wrapper tower","Proxy"],
-  ["Adapter","translate incompatibility","structure","domain → adapter → vendor","wrapper / conversion","method-renaming wrapper","Decorator"],
-  ["Facade","simplify subsystem access","structure","caller → facade → many","coarse entry API","god service","Adapter"],
-  ["Command","represent an action","behavior","invoker → command → receiver","object / closure","class for immediate one-liner","Event"],
-  ["State","vary behavior by lifecycle","behavior","context → current state","enum / table / objects","classes for two trivial states","Strategy"],
+  ["Strategy","vary an algorithm","behavior","composition","high","context → one strategy","State","tiny stable branch"],
+  ["Factory","choose + construct","creation","composition/function","high","creator → product","Builder","factory for every constructor"],
+  ["Builder","assemble complex value","creation","composition","medium","steps → product","Factory","ceremony for simple values"],
+  ["Singleton","one instance + access","creation","static / DI scope","low","global access","global variable","hidden mutable state"],
+  ["Observer","fan event to reactions","behavior","composition","high","one-to-many","Pub/Sub","hidden critical workflow"],
+  ["Decorator","stack optional behavior","structure","composition","high","wrapper → same contract","Proxy","untraceable tower"],
+  ["Adapter","translate incompatibility","structure","composition","medium","domain → vendor","Decorator","method renaming only"],
+  ["Facade","simplify subsystem access","structure","composition","medium","caller → facade → many","Adapter","god service"],
+  ["Command","represent an action","behavior","object / closure","high","invoker → receiver","Event","class for immediate call"],
+  ["State","behavior by lifecycle","behavior","composition / variant","medium","context → current state","Strategy","classes for two states"],
+  ["Template Method","vary selected steps","behavior","inheritance","low","base skeleton → hooks","Strategy","too many hooks"],
+  ["Chain of Responsibility","ordered request stages","behavior","composition","high","handler → next handler","Decorator","unspecified stop/order"],
 ] as const;
 
-export function PatternComparison(){return <div className="pattern-comparison" role="region" aria-label="Design pattern comparison" tabIndex={0}><div className="pattern-comparison__row pattern-comparison__head"><span>PATTERN</span><span>PRIMARY PROBLEM</span><span>FAMILY</span><span>RELATIONSHIP</span><span>MECHANISM</span><span>TYPICAL MISUSE</span><span>CONFUSED WITH</span></div>{rows.map(row=><div className="pattern-comparison__row" key={row[0]}>{row.map((cell,n)=>n===0?<b key={cell}>{cell}</b>:<span key={cell}>{cell}</span>)}</div>)}</div>}
+export function PatternComparison(){return <div className="pattern-comparison" role="region" aria-label="Design pattern comparison" tabIndex={0}><div className="pattern-comparison__row pattern-comparison__head"><span>PATTERN</span><span>PRIMARY PROBLEM</span><span>CATEGORY</span><span>MECHANISM</span><span>RUNTIME FLEX</span><span>RELATIONSHIP</span><span>CONFUSED WITH</span><span>COMMON MISUSE</span></div>{rows.map(row=><div className="pattern-comparison__row" key={row[0]}>{row.map((cell,n)=>n===0?<b key={cell}>{cell}</b>:<span key={cell}>{cell}</span>)}</div>)}</div>}
