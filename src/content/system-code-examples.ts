@@ -11,7 +11,8 @@ class ParkingLot{
 public: expected<Ticket,ParkError> park(const Vehicle& v){
   scoped_lock lock(mutex_);auto id=selector_->choose(v,available(spots_));
   if(!id)return unexpected(ParkError::Full);spots_.at(*id).occupy(v.plate);
-  return tickets_.emplace(newId(),Ticket{newId(),*id,v,clock_->now(),TicketState::Active}).first->second;
+  auto ticketId=newId();
+  return tickets_.emplace(ticketId,Ticket{ticketId,*id,v,clock_->now(),TicketState::Active}).first->second;
  }
  expected<Receipt,ExitError> exit(TicketId id){/* validate → price → pay → close + release exactly once */}
 };`,go:`type VehicleType int; const(Bike VehicleType=iota;Car;Truck)
