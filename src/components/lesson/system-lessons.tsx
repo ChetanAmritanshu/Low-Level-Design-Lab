@@ -33,3 +33,4 @@ export const SplitwiseLesson=()=> <SystemLesson c={splitwise}/>;
 export const BookMyShowLesson=()=> <SystemLesson c={bookmyshow}/>;
 export const ElevatorSystemLesson=()=> <SystemLesson c={elevator}/>;
 export const NotificationSystemLesson=()=> <SystemLesson c={notification}/>;
+export function AdvancedSystemLesson({config}:{config:Config}){return <SystemLesson c={config}/>}
